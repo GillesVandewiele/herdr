@@ -279,8 +279,10 @@ workspace:
 {"id":"req_move_new_workspace","method":"pane.move","params":{"pane_id":"w1:p2","destination":{"type":"new_workspace","label":"logs","tab_label":"main"},"focus":true}}
 ```
 
-Existing-tab moves require `split: "right" | "down"`. `target_pane_id` is
-optional and defaults to the target tab's focused pane. Same-tab layout changes
+Existing-tab moves take an optional `split: "right" | "down"` and an optional
+`target_pane_id`. With a `split`, the target defaults to the target tab's
+focused pane. Without one, the target defaults to the tab's largest pane and
+Herdr splits it along its visually longer side. Same-tab layout changes
 remain `pane.swap`; moving to the source tab returns `changed: false` with
 `reason: "same_tab"`. Moves involving a zoomed source or target tab return
 `changed: false` with `reason: "zoomed_tab"`.

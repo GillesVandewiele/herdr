@@ -868,9 +868,6 @@ fn parse_pane_move_args(args: &[String]) -> Result<PaneMoveParams, String> {
     }
 
     let destination = if let Some(tab_id) = tab_id {
-        let Some(split) = split else {
-            return Err(pane_move_usage());
-        };
         if workspace_id.is_some()
             || new_tab
             || new_workspace
@@ -908,7 +905,7 @@ fn parse_pane_move_args(args: &[String]) -> Result<PaneMoveParams, String> {
 }
 
 fn pane_move_usage() -> String {
-    "usage: herdr pane move <pane_id> --tab <tab_id> --split right|down [--target-pane ID] [--ratio FLOAT] [--focus|--no-focus]\n       herdr pane move <pane_id> --new-tab [--workspace ID] [--label TEXT] [--focus|--no-focus]\n       herdr pane move <pane_id> --new-workspace [--label TEXT] [--tab-label TEXT] [--focus|--no-focus]"
+    "usage: herdr pane move <pane_id> --tab <tab_id> [--split right|down] [--target-pane ID] [--ratio FLOAT] [--focus|--no-focus]\n       herdr pane move <pane_id> --new-tab [--workspace ID] [--label TEXT] [--focus|--no-focus]\n       herdr pane move <pane_id> --new-workspace [--label TEXT] [--tab-label TEXT] [--focus|--no-focus]"
         .into()
 }
 
@@ -1691,7 +1688,7 @@ fn print_pane_help() {
     );
     eprintln!("  herdr pane swap --direction left|right|up|down [--pane ID|--current]");
     eprintln!("  herdr pane swap --source-pane ID --target-pane ID");
-    eprintln!("  herdr pane move <pane_id> --tab <tab_id> --split right|down [--target-pane ID] [--ratio FLOAT] [--focus|--no-focus]");
+    eprintln!("  herdr pane move <pane_id> --tab <tab_id> [--split right|down] [--target-pane ID] [--ratio FLOAT] [--focus|--no-focus]");
     eprintln!("  herdr pane move <pane_id> --new-tab [--workspace ID] [--label TEXT] [--focus|--no-focus]");
     eprintln!("  herdr pane move <pane_id> --new-workspace [--label TEXT] [--tab-label TEXT] [--focus|--no-focus]");
     eprintln!("  herdr pane close <pane_id>");
@@ -1915,8 +1912,23 @@ mod tests {
             PaneMoveDestination::Tab {
                 tab_id: "issue:2".into(),
                 target_pane_id: Some("issue-3".into()),
-                split: SplitDirection::Right,
+                split: Some(SplitDirection::Right),
                 ratio: Some(0.25),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_pane_move_args_allows_tab_without_split() {
+        let params = parse_pane_move_args(&args(&["issue-1", "--tab", "issue:2"])).unwrap();
+
+        assert_eq!(
+            params.destination,
+            PaneMoveDestination::Tab {
+                tab_id: "issue:2".into(),
+                target_pane_id: None,
+                split: None,
+                ratio: None,
             }
         );
     }

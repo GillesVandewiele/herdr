@@ -14,7 +14,7 @@ use crate::api::schema::{
     PaneScrollParams, PaneSelectionReadParams, PaneSendInputParams, PaneSendKeysParams,
     PaneSendTextParams, PaneSplitParams, PaneSwapParams, PaneSwapReason, PaneSwapResult,
     PaneTarget, PaneTextPoint, PaneTextRange, PaneZoomMode, PaneZoomParams, PaneZoomReason,
-    PaneZoomResult, ResponseResult,
+    PaneZoomResult, ResponseResult, SplitDirection,
 };
 use crate::app::actions::{PaneZoomCommand, PaneZoomNoopReason};
 use crate::app::App;
@@ -1091,10 +1091,15 @@ impl App {
                         }
                         pane_id
                     }
+                    // Without an explicit split, fill the tab's largest pane.
+                    None if split.is_none() => self.largest_pane(target_ws_idx, target_tab_idx),
                     None => self.state.workspaces[target_ws_idx].tabs[target_tab_idx]
                         .layout
                         .focused(),
                 };
+                let split = split.unwrap_or_else(|| {
+                    self.longer_side_split(target_ws_idx, target_tab_idx, target_pane_id)
+                });
                 let Some(target_tab_id) = self.public_tab_id(target_ws_idx, target_tab_idx) else {
                     return encode_error(id, "tab_not_found", format!("tab {tab_id} not found"));
                 };
@@ -2117,6 +2122,27 @@ impl App {
         let panes = tab.layout.panes(self.state.view.terminal_area);
         let source = panes.iter().find(|pane| pane.id == source_pane_id)?;
         find_in_direction(source, direction.into(), &panes)
+    }
+
+    fn largest_pane(&self, ws_idx: usize, tab_idx: usize) -> PaneId {
+        let layout = &self.state.workspaces[ws_idx].tabs[tab_idx].layout;
+        layout
+            .panes(self.state.view.terminal_area)
+            .into_iter()
+            .max_by_key(|pane| u32::from(pane.rect.width) * u32::from(pane.rect.height))
+            .map_or_else(|| layout.focused(), |pane| pane.id)
+    }
+
+    /// Terminal cells are roughly twice as tall as they are wide, so a pane is
+    /// visually wider than tall when its width is at least twice its height.
+    fn longer_side_split(&self, ws_idx: usize, tab_idx: usize, pane_id: PaneId) -> SplitDirection {
+        self.state.workspaces[ws_idx].tabs[tab_idx]
+            .layout
+            .panes(self.state.view.terminal_area)
+            .into_iter()
+            .find(|pane| pane.id == pane_id)
+            .filter(|pane| pane.rect.width >= pane.rect.height.saturating_mul(2))
+            .map_or(SplitDirection::Down, |_| SplitDirection::Right)
     }
 
     pub(super) fn pane_layout_snapshot(
@@ -3356,7 +3382,7 @@ mod tests {
                 destination: PaneMoveDestination::Tab {
                     tab_id: target_tab_public.clone(),
                     target_pane_id: Some(target_public),
-                    split: SplitDirection::Right,
+                    split: Some(SplitDirection::Right),
                     ratio: Some(0.25),
                 },
                 focus: true,
@@ -3384,6 +3410,52 @@ mod tests {
             Some(&source_terminal)
         );
     }
+    #[test]
+    fn api_pane_move_without_split_splits_largest_pane_along_longer_side() {
+        let mut app = app_with_linked_worktree();
+        app.state.view.terminal_area = ratatui::layout::Rect::new(0, 0, 120, 40);
+        let source = app.state.workspaces[0].tabs[0].root_pane;
+        let target_tab = app.state.workspaces[0].test_add_tab(Some("target"));
+        app.state.workspaces[0].active_tab = target_tab;
+        app.state.workspaces[0].test_split(ratatui::layout::Direction::Horizontal);
+        seed_terminal_states(&mut app);
+        let source_public = app.public_pane_id(0, source).unwrap();
+        let target_tab_public = app.public_tab_id(0, target_tab).unwrap();
+
+        let response = app.handle_pane_move(
+            "req".into(),
+            PaneMoveParams {
+                pane_id: source_public.clone(),
+                destination: PaneMoveDestination::Tab {
+                    tab_id: target_tab_public,
+                    target_pane_id: None,
+                    split: None,
+                    ratio: None,
+                },
+                focus: true,
+            },
+        );
+
+        let success: SuccessResponse = serde_json::from_str(&response).unwrap();
+        let ResponseResult::PaneMove { move_result } = success.result else {
+            panic!("expected pane move response");
+        };
+        assert!(move_result.changed);
+        // Two side-by-side 60x40 panes are taller than wide, so the moved
+        // pane lands below one of them, turning the tab into a grid.
+        let panes = &move_result.target_layout.panes;
+        let moved = panes
+            .iter()
+            .find(|pane| pane.pane_id == source_public)
+            .unwrap()
+            .rect;
+        assert_eq!(panes.len(), 3);
+        assert!(panes.iter().any(|pane| pane.pane_id != source_public
+            && pane.rect.x == moved.x
+            && pane.rect.width == moved.width
+            && pane.rect.y < moved.y));
+    }
+
     #[test]
     fn api_pane_move_to_existing_tab_across_workspace_reassigns_public_pane_id() {
         let mut app = app_with_linked_worktree();
@@ -3413,7 +3485,7 @@ mod tests {
                 destination: PaneMoveDestination::Tab {
                     tab_id: target_tab_id.clone(),
                     target_pane_id: Some(target_pane_id),
-                    split: SplitDirection::Down,
+                    split: Some(SplitDirection::Down),
                     ratio: None,
                 },
                 focus: false,
@@ -3473,7 +3545,7 @@ mod tests {
                 destination: PaneMoveDestination::Tab {
                     tab_id: "t_2_1".into(),
                     target_pane_id: Some(target_public),
-                    split: SplitDirection::Right,
+                    split: Some(SplitDirection::Right),
                     ratio: None,
                 },
                 focus: true,
@@ -3725,7 +3797,7 @@ mod tests {
                 destination: PaneMoveDestination::Tab {
                     tab_id: source_tab,
                     target_pane_id: None,
-                    split: SplitDirection::Right,
+                    split: Some(SplitDirection::Right),
                     ratio: None,
                 },
                 focus: true,
@@ -3761,7 +3833,7 @@ mod tests {
                 destination: PaneMoveDestination::Tab {
                     tab_id: target_tab_public,
                     target_pane_id: Some(wrong_target),
-                    split: SplitDirection::Right,
+                    split: Some(SplitDirection::Right),
                     ratio: None,
                 },
                 focus: true,
@@ -3798,7 +3870,7 @@ mod tests {
                 destination: PaneMoveDestination::Tab {
                     tab_id: target_tab_public,
                     target_pane_id: Some(explicit_target_public),
-                    split: SplitDirection::Right,
+                    split: Some(SplitDirection::Right),
                     ratio: None,
                 },
                 focus: false,
@@ -3874,7 +3946,7 @@ mod tests {
                 destination: PaneMoveDestination::Tab {
                     tab_id: target_tab_public.clone(),
                     target_pane_id: Some(target_public),
-                    split: SplitDirection::Right,
+                    split: Some(SplitDirection::Right),
                     ratio: None,
                 },
                 focus: true,

@@ -138,7 +138,7 @@ async fn public_pane_move_focus_handles_source_removal_and_unchanged_server_targ
             PaneMoveDestination::Tab {
                 tab_id: second_tab,
                 target_pane_id: None,
-                split: crate::api::schema::SplitDirection::Right,
+                split: Some(crate::api::schema::SplitDirection::Right),
                 ratio: None,
             }
         };
@@ -204,7 +204,7 @@ async fn public_pane_move_without_effective_focus_preserves_client_views() {
                 destination: PaneMoveDestination::Tab {
                     tab_id,
                     target_pane_id: None,
-                    split: crate::api::schema::SplitDirection::Right,
+                    split: Some(crate::api::schema::SplitDirection::Right),
                     ratio: None,
                 },
                 focus: case != "no-focus",

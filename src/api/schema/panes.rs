@@ -87,7 +87,10 @@ pub enum PaneMoveDestination {
         tab_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         target_pane_id: Option<String>,
-        split: SplitDirection,
+        /// When omitted, Herdr splits the target pane (or, without a target, the tab's
+        /// largest pane) along its visually longer side.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        split: Option<SplitDirection>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ratio: Option<f32>,
     },

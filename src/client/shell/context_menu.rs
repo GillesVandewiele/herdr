@@ -4,7 +4,10 @@ impl ClientContextMenuOverlay {
     pub(super) fn items(&self) -> Vec<ClientContextMenuItem> {
         use ClientContextMenuAction as Action;
 
-        let item = |label, action| ClientContextMenuItem { label, action };
+        let item = |label: &'static str, action| ClientContextMenuItem {
+            label: label.into(),
+            action,
+        };
         match &self.target {
             ClientContextMenuTarget::Workspace { is_git: false, .. } => {
                 vec![item("Rename", Action::Rename), item("Close", Action::Close)]
@@ -54,6 +57,7 @@ impl ClientContextMenuOverlay {
                 source_pane_id,
                 has_manual_label,
                 right_click_passthrough,
+                move_targets,
                 ..
             } => {
                 let mut items = vec![item("Rename pane", Action::RenamePane)];
@@ -66,6 +70,14 @@ impl ClientContextMenuOverlay {
                 items.extend([
                     item("Split right", Action::SplitRight),
                     item("Split down", Action::SplitDown),
+                ]);
+                items.extend(move_targets.iter().enumerate().map(|(index, (_, label))| {
+                    ClientContextMenuItem {
+                        label: format!("Move to tab {label}").into(),
+                        action: Action::MoveToTab(index),
+                    }
+                }));
+                items.extend([
                     item("Zoom", Action::Zoom),
                     item(
                         if *right_click_passthrough {
@@ -153,6 +165,12 @@ impl ClientShellState {
             .focused_pane_id
             .clone()
             .filter(|focused| focused != &pane_id);
+        let move_targets = snapshot
+            .tabs
+            .iter()
+            .filter(|tab| tab.workspace_id == pane.workspace_id && tab.tab_id != pane.tab_id)
+            .map(|tab| (tab.tab_id.clone(), tab.label.clone()))
+            .collect();
         self.overlay = Some(ClientShellOverlay::ContextMenu(ClientContextMenuOverlay {
             target: ClientContextMenuTarget::Pane {
                 pane_id,
@@ -160,6 +178,7 @@ impl ClientShellState {
                 source_pane_id,
                 has_manual_label: pane.label.is_some(),
                 right_click_passthrough: pane.right_click_passthrough,
+                move_targets,
             },
             x,
             y,
@@ -206,12 +225,14 @@ impl ClientShellState {
                 workspace_id,
                 source_pane_id,
                 right_click_passthrough,
+                move_targets,
                 ..
             } => self.activate_pane_context_action(
                 pane_id,
                 workspace_id,
                 source_pane_id,
                 right_click_passthrough,
+                move_targets,
                 action,
                 outcome,
             ),
@@ -361,12 +382,14 @@ impl ClientShellState {
         workspace_id: String,
         source_pane_id: Option<String>,
         right_click_passthrough: bool,
+        move_targets: Vec<(String, String)>,
         action: ClientContextMenuAction,
         outcome: &mut ClientShellInput,
     ) {
         use crate::api::schema::{
-            Method, PaneInputSetParams, PaneRenameParams, PaneRightClickTarget, PaneSplitParams,
-            PaneSwapParams, PaneTarget, PaneZoomMode, PaneZoomParams, SplitDirection,
+            Method, PaneInputSetParams, PaneMoveDestination, PaneMoveParams, PaneRenameParams,
+            PaneRightClickTarget, PaneSplitParams, PaneSwapParams, PaneTarget, PaneZoomMode,
+            PaneZoomParams, SplitDirection,
         };
 
         match action {
@@ -428,6 +451,23 @@ impl ClientShellState {
                     }),
                     outcome,
                 );
+            }
+            ClientContextMenuAction::MoveToTab(index) => {
+                if let Some((tab_id, _)) = move_targets.into_iter().nth(index) {
+                    self.push_endpoint_method(
+                        Method::PaneMove(PaneMoveParams {
+                            pane_id,
+                            destination: PaneMoveDestination::Tab {
+                                tab_id,
+                                target_pane_id: None,
+                                split: None,
+                                ratio: None,
+                            },
+                            focus: true,
+                        }),
+                        outcome,
+                    );
+                }
             }
             ClientContextMenuAction::Zoom => self.push_endpoint_method(
                 Method::PaneZoom(PaneZoomParams {
