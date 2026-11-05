@@ -2688,7 +2688,15 @@
                   ]
                 },
                 "split": {
-                  "$ref": "#/schemas/request/$defs/SplitDirection"
+                  "anyOf": [
+                    {
+                      "$ref": "#/schemas/request/$defs/SplitDirection"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "When omitted, Herdr splits the target pane (or, without a target, the tab's\nlargest pane) along its visually longer side."
                 },
                 "tab_id": {
                   "type": "string"
@@ -2706,8 +2714,7 @@
               },
               "required": [
                 "type",
-                "tab_id",
-                "split"
+                "tab_id"
               ],
               "type": "object"
             },

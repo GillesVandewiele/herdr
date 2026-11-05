@@ -522,6 +522,7 @@ pub(super) enum ClientContextMenuAction {
     SwapWithFocusedPane,
     SplitRight,
     SplitDown,
+    MoveToTab(usize),
     Zoom,
     ToggleRightClickPassthrough,
     ClosePane,
@@ -547,6 +548,8 @@ pub(super) enum ClientContextMenuTarget {
         source_pane_id: Option<String>,
         has_manual_label: bool,
         right_click_passthrough: bool,
+        /// Other tabs in the pane's workspace as `(tab_id, label)`.
+        move_targets: Vec<(String, String)>,
     },
 }
 
@@ -559,7 +562,7 @@ pub(super) struct ClientContextMenuOverlay {
 }
 
 pub(super) struct ClientContextMenuItem {
-    pub(super) label: &'static str,
+    pub(super) label: std::borrow::Cow<'static, str>,
     pub(super) action: ClientContextMenuAction,
 }
 

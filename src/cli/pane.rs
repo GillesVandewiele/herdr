@@ -149,12 +149,12 @@ fn move_pane(matches: &ArgMatches) -> Result<Method, ParseError> {
         .map(|value| finite("ratio", &value))
         .transpose()?;
     params.destination = if let Some(tab) = text("tab") {
-        let split =
-            text("split").ok_or_else(|| ParseError::Usage("missing required --split".into()))?;
         PaneMoveDestination::Tab {
             tab_id: super::normalize_tab_id(&tab),
             target_pane_id: text("target-pane").map(|value| super::normalize_pane_id(&value)),
-            split: bindings::parse_choice(bindings::SPLITS, "split direction", &split)?,
+            split: text("split")
+                .map(|split| bindings::parse_choice(bindings::SPLITS, "split direction", &split))
+                .transpose()?,
             ratio,
         }
     } else if matches.get_flag("new-tab") {
@@ -728,8 +728,27 @@ mod tests {
             PaneMoveDestination::Tab {
                 tab_id: "issue:2".into(),
                 target_pane_id: Some("issue-3".into()),
-                split: SplitDirection::Right,
+                split: Some(SplitDirection::Right),
                 ratio: Some(0.25)
+            }
+        );
+    }
+
+    #[test]
+    fn parse_pane_move_args_allows_tab_without_split() {
+        let Method::PaneMove(params) = request("move", &["issue-1", "--tab", "issue:2"])
+            .unwrap()
+            .method
+        else {
+            panic!()
+        };
+        assert_eq!(
+            params.destination,
+            PaneMoveDestination::Tab {
+                tab_id: "issue:2".into(),
+                target_pane_id: None,
+                split: None,
+                ratio: None
             }
         );
     }

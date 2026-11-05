@@ -378,6 +378,59 @@ fn context_menus_capture_stable_targets_and_route_actions() {
 }
 
 #[test]
+fn pane_context_menu_moves_pane_to_other_tab() {
+    let mut snapshot = snapshot();
+    let mut other_tab = snapshot.tabs[0].clone();
+    other_tab.tab_id = "tab_2".into();
+    other_tab.label = "2".into();
+    other_tab.focused = false;
+    snapshot.tabs.push(other_tab);
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot));
+    state.set_pane_surface(surface());
+    state.compose(106, 20).expect("composed frame");
+
+    let pane = state.hits.panes[0].rect;
+    state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Right),
+        column: pane.x + 1,
+        row: pane.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    state.compose(106, 20).expect("pane context menu");
+    let move_index = match state.overlay.as_ref() {
+        Some(ClientShellOverlay::ContextMenu(menu)) => menu
+            .items()
+            .iter()
+            .position(|item| item.label == "Move to tab 2")
+            .expect("move to tab item"),
+        _ => panic!("pane context menu"),
+    };
+    let row = state.hits.context_menu_rows[move_index].0;
+    let outcome =
+        state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: row.x + 1,
+            row: row.y,
+            modifiers: KeyModifiers::empty(),
+        })]);
+    let [ClientShellAction::Endpoint { request, .. }] = &outcome.actions[..] else {
+        panic!("move context action should use endpoint API");
+    };
+    assert!(matches!(
+        &request.method,
+        crate::api::schema::Method::PaneMove(params)
+            if params.pane_id == "pane_1"
+                && params.destination == crate::api::schema::PaneMoveDestination::Tab {
+                    tab_id: "tab_2".into(),
+                    target_pane_id: None,
+                    split: None,
+                    ratio: None,
+                }
+    ));
+}
+
+#[test]
 fn global_menu_opens_from_sidebar_and_routes_client_actions() {
     let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
     state.set_snapshot(Box::new(snapshot()));
